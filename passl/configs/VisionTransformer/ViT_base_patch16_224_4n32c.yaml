@@ -1,0 +1,122 @@
+# global configs
+Global:
+  checkpoints: null
+  pretrained_model: null
+  output_dir: ./output/
+  device: gpu
+  save_interval: 1
+  max_num_latest_checkpoint: 0
+  eval_during_train: True
+  eval_interval: 1
+  epochs: 300
+  print_batch_step: 10
+  use_visualdl: True
+  seed: 2021
+  
+# FP16 setting
+FP16:
+  level: O2
+
+# model architecture
+Model:
+  name: ViT_base_patch16_224
+  class_num: 1000
+  drop_rate: 0.1
+  representation_size: 768
+ 
+# loss function config for traing/eval process
+Loss:
+  Train:
+    - ViTCELoss:
+        weight: 1.0
+        epsilon: 0.0001
+  Eval:
+    - CELoss:
+        weight: 1.0
+
+LRScheduler:
+  name: ViTLRScheduler
+  learning_rate: 3e-3
+  decay_type: cosine
+  warmup_steps: 10000
+
+Optimizer:
+  name: AdamW
+  beta1: 0.9
+  beta2: 0.999
+  epsilon: 1e-8
+  weight_decay: 0.3
+  clip_global_norm: 1.0
+
+# data loader for train and eval
+DataLoader:
+  Train:
+    dataset:
+      name: ImageNetDataset
+      image_root: ./dataset/ILSVRC2012/
+      cls_label_path: ./dataset/ILSVRC2012/train_list.txt
+      transform_ops:
+        - DecodeImage:
+            to_rgb: True
+            channel_first: False
+        - RandCropImage:
+            size: 224
+            scale: [0.05, 1.0]
+            interpolation: bicubic
+            backend: pil
+        - RandFlipImage:
+            flip_code: 1
+        - NormalizeImage:
+            scale: 1.0/255.0
+            mean: [0.5, 0.5, 0.5]
+            std: [0.5, 0.5, 0.5]
+            order: ''
+        - ToCHWImage:
+
+    sampler:
+      name: DistributedBatchSampler
+      batch_size: 128
+      drop_last: False
+      shuffle: True
+    loader:
+      num_workers: 4
+      use_shared_memory: False
+
+  Eval:
+    dataset: 
+      name: ImageNetDataset
+      image_root: ./dataset/ILSVRC2012/
+      cls_label_path: ./dataset/ILSVRC2012/val_list.txt
+      transform_ops:
+        - DecodeImage:
+            to_rgb: True
+            channel_first: False
+        - ResizeImage:
+            resize_short: 256
+            interpolation: bicubic
+            backend: pil
+        - CenterCropImage:
+            size: 224
+        - NormalizeImage:
+            scale: 1.0/255.0
+            mean: [0.5, 0.5, 0.5]
+            std: [0.5, 0.5, 0.5]
+            order: ''
+        - ToCHWImage:
+        
+    sampler:
+      name: DistributedBatchSampler
+      batch_size: 256
+      drop_last: False
+      shuffle: False
+    loader:
+      num_workers: 4
+      use_shared_memory: False
+
+Metric:
+  Train:
+    - TopkAcc:
+        topk: [1, 5]
+  Eval:
+    - TopkAcc:
+        topk: [1, 5]
