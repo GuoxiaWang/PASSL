@@ -28,8 +28,7 @@ def defualt_train_one_epoch(engine, epoch_id):
         if iter_id >= engine.max_iter:
             break
         profiler.add_profiler_step(engine.config["profiler_options"])
-        if iter_id > 20:
-            break
+
         if iter_id == 5:
             for key in engine.time_info:
                 engine.time_info[key].reset()
@@ -47,21 +46,35 @@ def defualt_train_one_epoch(engine, epoch_id):
                                   custom_white_list=engine.fp16_custom_white_list,
                                   custom_black_list=engine.fp16_custom_black_list,
                                   level=engine.fp16_level):
-            out = engine.model(batch[0])
 
+            out = engine.model(batch[0])
             loss_dict = engine.train_loss_func(out, batch[1])
 
         # loss scaling if using fp16 otherwise do nothing
         scaled = engine.scaler.scale(loss_dict["loss"])
         scaled.backward()
-        # do unscale and step if using fp16 and not found nan/inf
-        # otherwise do nothing
-        engine.scaler.step(engine.optimizer)
-        # do update loss scaling if using fp16
-        # otherwise do nothing
-        engine.scaler.update()
-
-        engine.optimizer.clear_grad()
+        
+        # default we use accum_steps=1
+        if (iter_id + 1) % engine.accum_steps == 0:
+            if getattr(engine.model, 'grad_scale', None) is not None:
+                # the model is data sharding warpper model
+                if engine.model._accumulate_grads:
+                    engine.model.grad_scale()
+                engine.scaler.step(engine.optimizer)
+                # do update loss scaling if using fp16
+                # otherwise do nothing
+                engine.scaler.update()
+                # clear gradients
+                engine.model.clear_gradients()
+            else:
+                # do unscale and step if using fp16 and not found nan/inf
+                # otherwise do nothing
+                engine.scaler.step(engine.optimizer)
+                # do update loss scaling if using fp16
+                # otherwise do nothing
+                engine.scaler.update()
+                # clear gradients
+                engine.optimizer.clear_grad()
 
         if engine.lr_decay_unit == 'step':
             engine.lr_scheduler.step()

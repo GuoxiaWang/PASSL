@@ -1,6 +1,6 @@
 # global configs
 Global:
-  checkpoints: null
+  checkpoint: null
   pretrained_model: null
   output_dir: ./output/
   device: gpu
@@ -8,14 +8,18 @@ Global:
   max_num_latest_checkpoint: 0
   eval_during_train: True
   eval_interval: 1
+  accum_steps: 1
   epochs: 300
   print_batch_step: 10
-  use_visualdl: True
+  use_visualdl: False
   seed: 2021
   
 # FP16 setting
 FP16:
-  level: O2
+  level: O1
+  
+# DistributedStrategy:
+#   data_sharding: True
 
 # model architecture
 Model:
@@ -79,8 +83,8 @@ DataLoader:
       drop_last: False
       shuffle: True
     loader:
-      num_workers: 4
-      use_shared_memory: False
+      num_workers: 8
+      use_shared_memory: True
 
   Eval:
     dataset: 
@@ -110,8 +114,8 @@ DataLoader:
       drop_last: False
       shuffle: False
     loader:
-      num_workers: 4
-      use_shared_memory: False
+      num_workers: 8
+      use_shared_memory: True
 
 Metric:
   Train:

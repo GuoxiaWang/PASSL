@@ -48,13 +48,14 @@ class Engine(object):
         self.use_dali = self.config['Global'].get("use_dali", False)
         self.print_batch_step = self.config['Global'].get('print_batch_step', 10)
         self.save_interval = self.config["Global"].get("save_interval", 1)
+        self.accum_steps = self.config["Global"].get("accum_steps", 1)
         
         # init distribution env
         self.config["Global"]["distributed"] = dist.get_world_size() != 1
         self.config["Global"]["rank"] = dist.get_rank()
         self.config["Global"]["world_size"] = dist.get_world_size()
         if self.config["Global"]["distributed"]:
-            dist.init_parallel_env()
+            dist.fleet.init(is_collective=True)
 
         # set seed
         seed = self.config["Global"].get("seed", False)
@@ -186,7 +187,30 @@ class Engine(object):
 
         # for distributed
         if self.config["Global"]["distributed"]:
-            self.model = paddle.DataParallel(self.model)
+            # config DistributedStrategy
+            if self.config.get("DistributedStrategy", None) is not None:
+                if self.config["DistributedStrategy"].get("data_sharding", False):
+                    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.sharding_optimizer_stage2 import ShardingOptimizerStage2
+                    from paddle.distributed.fleet.meta_parallel.sharding.sharding_stage2 import ShardingStage2
+                    hcg = dist.fleet.get_hybrid_communicate_group()
+                    # group = hcg.get_check_parallel_group()
+                    group = paddle.distributed.new_group([0, 1, 2, 3])
+                    
+                    # First, we need to split optimizer
+                    self.optimizer = ShardingOptimizerStage2(
+                        params=self.model.parameters(), optim=self.optimizer, group=group)
+
+                    # Second, warpper the origin model to have gradient sharding function
+                    self.model = ShardingStage2(
+                        self.model, 
+                        self.optimizer, 
+                        group=group, 
+                        accumulate_grads=self.accum_steps>1,
+                        device=self.config["Global"]["device"],
+                    )
+            else:
+                # we always use pure data parallel default
+                self.model = paddle.DataParallel(self.model)      
 
     def train(self):
         assert self.mode == "train"
@@ -206,7 +230,7 @@ class Engine(object):
         # global iter counter
         self.global_step = 0
 
-        if self.config["Global"]["checkpoints"] is not None:
+        if self.config["Global"]["checkpoint"] is not None:
             metric_info = io.load_checkpoint(self.config["Global"], self.model,
                                      self.optimizer)
             if metric_info is not None:

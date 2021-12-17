@@ -20,7 +20,8 @@ import paddle
 
 from passl.utils import logger
 
-from . optimizer import AdamW
+from . adamw import AdamW
+from . adafactor import Adafactor
 
 def build_optimizer(config, lr_scheduler, model_list=None):
     config = copy.deepcopy(config)
